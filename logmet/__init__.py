@@ -96,7 +96,7 @@ class Logmet(object):
             return msg_wrapper
 
         metrics_package = wrap_for_send([packed_metric])
-        LOG.info("Sending wrapped messages: [{}]".format(metrics_package))
+        LOG.debug("Sending wrapped messages: [{}]".format(metrics_package))
 
         acked = False
         while not acked:
