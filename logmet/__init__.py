@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import select
 import socket
 import ssl
 import struct
@@ -47,6 +48,12 @@ class Logmet(object):
     def __init__(self, logmet_host, logmet_port, space_id, token):
         self.space_id = space_id
         self._token = token
+        self.logmet_host = logmet_host
+        self.logmet_port = logmet_port
+
+        self._connect()
+
+    def _connect(self):
         try:
             ssl_context = ssl.create_default_context()
             self.socket = ssl_context.wrap_socket(
@@ -59,13 +66,30 @@ class Logmet(object):
                 socket.socket(socket.AF_INET))
 
         self.socket.settimeout(self.default_timeout)
-        self.socket.connect((logmet_host, int(logmet_port)))
+        self.socket.connect((self.logmet_host, int(self.logmet_port)))
 
         self._auth_handshake()
 
         self._conn_sequence = None
 
+    def _conn_is_dropped(self):
+        # logmet appears to shutdown its side after 2 minutes
+        # of inactivity on the TCP connection, so...
+        # check to see if we got a close message
+        list_tup = select.select([self.socket], [], [], 0)
+        rlist = list_tup[0]
+        return bool(rlist)
+
+    def _assert_conn(self):
+        if self._conn_is_dropped():
+            LOG.info('Detected closed connection. Reconnecting.')
+            self.socket.close()
+            self.socket = None
+            self._connect()
+
     def emit_metric(self, name, value, timestamp=None):
+        self._assert_conn()
+
         if timestamp is None:
             timestamp = time.time()
 
@@ -137,3 +161,9 @@ class Logmet(object):
         if not resp.startswith('1A'):
             raise Exception('Auth failure!')
         LOG.info('Auth to logmet successful')
+
+    def close(self):
+        # nicely close
+        self.socket.shutdown(1)
+        time.sleep(0.1)
+        self.socket.close()
