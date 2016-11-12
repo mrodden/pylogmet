@@ -21,6 +21,7 @@ import time
 
 LOG = logging.getLogger(__name__)
 
+
 class Logmet(object):
     """
     Simple client for sending metrics to Logmet.
@@ -42,7 +43,6 @@ class Logmet(object):
 
     """
 
-
     default_timeout = 20.0  # seconds
 
     def __init__(self, logmet_host, logmet_port, space_id, token):
@@ -58,7 +58,7 @@ class Logmet(object):
             ssl_context = ssl.create_default_context()
             self.socket = ssl_context.wrap_socket(
                 socket.socket(socket.AF_INET),
-                server_hostname=logmet_host)
+                server_hostname=self.logmet_host)
         except AttributeError:
             # build our own then; probably not secure, but logmet
             # doesn't seem to check/verify certs?
@@ -115,14 +115,21 @@ class Logmet(object):
         def wrap_for_send(messages):
             msg_wrapper = '1W' + struct.pack('!I', len(messages))
             for idx, mesg in enumerate(messages, start=1):
-                msg_wrapper += '1M' + struct.pack('!I', self._conn_sequence) + mesg
+                msg_wrapper += ('1M' +
+                                struct.pack('!I', self._conn_sequence) +
+                                mesg)
                 self._conn_sequence += 1
             return msg_wrapper
 
         metrics_package = wrap_for_send([packed_metric])
-        LOG.debug("Sending wrapped messages: [{}]".format(
-            metrics_package.encode('string_escape', errors='backslashreplace')))
-
+        LOG.debug(
+            "Sending wrapped messages: [{}]".format(
+                metrics_package.encode(
+                    'string_escape',
+                    errors='backslashreplace'
+                )
+            )
+        )
 
         acked = False
         while not acked:
@@ -132,7 +139,9 @@ class Logmet(object):
                 resp = self.socket.recv(16)
                 LOG.debug('Ack buffer: [{}]'.format(resp))
                 if not resp.startswith('1A'):
-                    LOG.warning('Unexpected ACK response from recv: [{}]'.format(resp))
+                    LOG.warning(
+                        'Unexpected ACK response from recv: [{}]'.format(resp)
+                    )
                     time.sleep(0.1)
                 else:
                     acked = True

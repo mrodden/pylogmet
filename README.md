@@ -1,5 +1,7 @@
 # pylogmet
 
+[![Build Status](https://travis-ci.org/locke105/pylogmet.svg?branch=master)](https://travis-ci.org/locke105/pylogmet)
+
 A Pythonic Logmet client
 
 # usage
