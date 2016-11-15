@@ -1,6 +1,7 @@
 # pylogmet
 
 [![Build Status](https://travis-ci.org/locke105/pylogmet.svg?branch=master)](https://travis-ci.org/locke105/pylogmet)
+[![Apache License](http://img.shields.io/badge/license-APACHE2-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0.html)
 
 A Pythonic Logmet client
 
