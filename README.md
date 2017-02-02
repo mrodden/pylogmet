@@ -7,6 +7,7 @@ A Pythonic Logmet client
 
 # usage
 
+## Sending metrics
 ```python
 import logmet
 
@@ -20,6 +21,24 @@ lm = logmet.Logmet(
 lm.emit_metric(name='logmet.test.1', value=1)
 lm.emit_metric(name='logmet.test.2', value=2)
 lm.emit_metric(name='logmet.test.3', value=3)
+```
+
+## Sending logs
+```python
+import logmet
+
+lm = logmet.Logmet(
+    logmet_host='logs.opvis.bluemix.net',
+    logmet_port=9091,
+    space_id='deadbbeef1234567890',
+    token='put_your_logmet_logging_token_here'       
+)
+
+# Emitting a string will map the string to the "message" field in logmet kibana
+lm.emit_log('This is a log message')
+
+# You can also emit a dictionary where you include additional fields you can search and filter in logmet kibana. 
+lm.emit_log({'app_name':'myApp','type':'myType','message':'This is a log message'})
 ```
 
 # Where do I find my token?
