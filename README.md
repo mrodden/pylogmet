@@ -14,7 +14,7 @@ import logmet
 lm = logmet.Logmet(
     logmet_host='metrics.opvis.bluemix.net',
     logmet_port=9095,
-    space_id='deadbbeef1234567890',
+    space_id='deadbeef1234567890',
     token='put_your_logmet_logging_token_here'
 )
 
@@ -30,15 +30,20 @@ import logmet
 lm = logmet.Logmet(
     logmet_host='logs.opvis.bluemix.net',
     logmet_port=9091,
-    space_id='deadbbeef1234567890',
-    token='put_your_logmet_logging_token_here'       
+    space_id='deadbeef1234567890',
+    token='put_your_logmet_logging_token_here'
 )
 
-# Emitting a string will map the string to the "message" field in logmet kibana
+# Emitting a string will map the string to the "message" field in Logmet Kibana
 lm.emit_log('This is a log message')
 
-# You can also emit a dictionary where you include additional fields you can search and filter in logmet kibana. 
-lm.emit_log({'app_name':'myApp','type':'myType','message':'This is a log message'})
+# You can also emit a dictionary with additional fields.
+# These can be searched and filtered on in Logmet Kibana.
+lm.emit_log(
+    {'app_name': 'myApp',
+     'type': 'myType',
+     'message': 'This is a log message'}
+)
 ```
 
 # Where do I find my token?
