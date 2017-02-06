@@ -22,6 +22,10 @@ import time
 LOG = logging.getLogger(__name__)
 
 
+class SendError(Exception):
+    pass
+
+
 class Logmet(object):
     """
     Simple client for sending metrics to Logmet.
@@ -97,7 +101,16 @@ class Logmet(object):
         metric_msg = metric_fmt.format(
             self.space_id, name, value, timestamp)
 
-        self._send_metric(metric_msg)
+        try:
+            self._send_metric(metric_msg)
+        except (socket.error, SendError):
+            LOG.exception('Error while attempting to send metric!')
+            # try a quick connection rebuild and try again
+            if self.socket is not None:
+                self.socket.close()
+            self.socket = None
+            self._connect()
+            self._send_metric(metric_msg)
 
     def _send_metric(self, message):
         if isinstance(message, unicode):
@@ -131,22 +144,21 @@ class Logmet(object):
             )
         )
 
-        acked = False
-        while not acked:
-            self.socket.sendall(metrics_package)
+        self.socket.sendall(metrics_package)
 
-            try:
-                resp = self.socket.recv(16)
-                LOG.debug('Ack buffer: [{}]'.format(resp))
-                if not resp.startswith('1A'):
-                    LOG.warning(
-                        'Unexpected ACK response from recv: [{}]'.format(resp)
-                    )
-                    time.sleep(0.1)
-                else:
-                    acked = True
-            except Exception:
-                LOG.warning('No ACK received from server!')
+        resp = ''
+        while _has_readable(self.socket):
+            data = self.socket.recv(1024)
+            resp += data
+            if resp >= 6:
+                break
+
+        LOG.debug('ACK buffer: [{}]'.format(repr(resp)))
+        if not resp.startswith('1A'):
+            raise SendError(
+                'Invalid or no ACK from logmet: [{}]'.format(repr(resp)))
+        else:
+            LOG.debug('ACK-success found')
 
         LOG.debug('Metrics sent to logmet successfully')
 
@@ -168,7 +180,7 @@ class Logmet(object):
 
         self.socket.sendall(auth_msg)
 
-        resp = self.socket.recv(16)
+        resp = self.socket.recv(1024)
         if not resp.startswith('1A'):
             raise Exception('Auth failure!')
         LOG.info('Auth to logmet successful')
@@ -178,3 +190,8 @@ class Logmet(object):
         self.socket.shutdown(1)
         time.sleep(0.1)
         self.socket.close()
+
+
+def _has_readable(sock):
+    read_ready = select.select([sock], [], [], 10)[0]
+    return bool(read_ready)
