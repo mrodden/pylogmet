@@ -28,9 +28,9 @@ class SendError(Exception):
 
 class Logmet(object):
     """
-    Simple client for sending metrics to Logmet.
+    Simple client for sending metrics and logs to Logmet.
 
-    To use::
+    To use for Metrics::
 
         import logmet
 
@@ -44,6 +44,28 @@ class Logmet(object):
         lm.emit_metric(name='logmet.test.1', value=1)
         lm.emit_metric(name='logmet.test.2', value=2)
         lm.emit_metric(name='logmet.test.3', value=3)
+
+
+    To use for Logs::
+        import logmet
+
+        lm = logmet.Logmet(
+            logmet_host='logs.opvis.bluemix.net',
+            logmet_port=9091,
+            space_id='deadbbeef1234567890',
+            token='put_your_logmet_logging_token_here'
+        )
+
+        # Emitting a string will map the string to the "message" field
+        lm.emit_log('This is a log message')
+
+        # You can also emit a dictionary where you include fields
+        # you can search and filter in logmet kibana.
+        lm.emit_log({
+          'app_name':'myApp',
+          'type':'myType',
+          'message':'This is a log message'
+        })
 
     """
 
@@ -161,6 +183,105 @@ class Logmet(object):
             LOG.debug('ACK-success found')
 
         LOG.debug('Metrics sent to logmet successfully')
+
+    def emit_log(self, message):
+        """
+        :param message: string or dict to send to logmet
+        """
+        self._assert_conn()
+
+        if isinstance(message, str):
+            entry = {'message': message}
+        else:
+            entry = dict(message)
+
+        # The tenant ID must be included for the message to be accepted
+        entry['ALCH_TENANT_ID'] = self.space_id
+
+        encoded = self._pack_dict(entry)
+
+        self._send_log(encoded)
+
+    def _pack_dict(self, msg):
+        """
+        :param msg: the dict to pack
+        :return: string in the format
+           '<num_keypars><len_key1><key1><len_val1><val1>...etc'
+        """
+        parts = []
+        total_keys = len(msg)
+        for key, value in msg.iteritems():
+            key = self._encode_unicode(key)
+            value = self._encode_unicode(value)
+            if not value:
+                # Keys without corresponding value can cause problems.
+                total_keys -= 1
+                continue
+            parts.extend([
+                self._pack_int(len(key)),
+                key,
+                self._pack_int(len(value)),
+                value,
+            ])
+
+        return self._pack_int(total_keys) + ''.join(parts)
+
+    def _encode_unicode(self, obj):
+        if isinstance(obj, unicode):
+            return obj.encode('utf-8', 'replace')
+        else:
+            return str(obj)
+
+    def _pack_int(self, i):
+        """
+        Pack an int into a 4 byte string big endian.
+        """
+        return struct.pack('!I', i)
+
+    def _send_log(self, message):
+        if isinstance(message, unicode):
+            # turn unicode into bytearray/str
+            encoded_message = message.encode('utf-8', 'replace')
+        else:
+            # cool, already encoded
+            encoded_message = str(message)
+
+        if self._conn_sequence is None:
+            self._conn_sequence = 1
+
+        # Currently only support sending one log entry at the time
+        message_package = ('1W' +
+                           self._pack_int(1) +
+                           '1D' + self._pack_int(self._conn_sequence) +
+                           encoded_message)
+        self._conn_sequence += 1
+
+        LOG.debug(
+            "Sending wrapped messages: [{}]".format(
+                message_package.encode(
+                    'string_escape',
+                    errors='backslashreplace'
+                )
+            )
+        )
+        acked = False
+        while not acked:
+            self.socket.sendall(message_package)
+
+            try:
+                resp = self.socket.recv(16)
+                LOG.debug('Ack buffer: [{}]'.format(resp))
+                if not resp.startswith('1A'):
+                    LOG.warning(
+                        'Unexpected ACK response from recv: [{}]'.format(resp)
+                    )
+                    time.sleep(0.1)
+                else:
+                    acked = True
+            except Exception:
+                LOG.warning('No ACK received from server!')
+
+        LOG.debug('Log message sent to logmet successfully')
 
     def _auth_handshake(self):
         # local connection IP addr
