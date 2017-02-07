@@ -113,60 +113,37 @@ class Logmet(object):
             self.socket = None
             self._connect()
 
-    def emit_metric(self, name, value, timestamp=None):
+    def _send_data(self, package, data_type):
         self._assert_conn()
 
-        if timestamp is None:
-            timestamp = time.time()
-
-        metric_fmt = '{0}.{1} {2} {3}\r\n'
-        metric_msg = metric_fmt.format(
-            self.space_id, name, value, timestamp)
-
         try:
-            self._send_metric(metric_msg)
+            self._build_and_send(package, data_type)
         except (socket.error, SendError):
-            LOG.exception('Error while attempting to send metric!')
+            LOG.exception('Error while attempting to send data!')
             # try a quick connection rebuild and try again
             if self.socket is not None:
                 self.socket.close()
             self.socket = None
             self._connect()
-            self._send_metric(metric_msg)
+            self._build_and_send(package, data_type)
 
-    def _send_metric(self, message):
-        if isinstance(message, unicode):
-            # turn unicode into bytearray/str
-            encoded = message.encode('utf-8', 'replace')
-        else:
-            # cool, already encoded
-            encoded = str(message)
-
-        packed_metric = struct.pack('!I', len(message)) + encoded
-
+    def _build_and_send(self, package, data_type):
         if self._conn_sequence is None:
             self._conn_sequence = 1
 
-        def wrap_for_send(messages):
-            msg_wrapper = '1W' + struct.pack('!I', len(messages))
-            for idx, mesg in enumerate(messages, start=1):
-                msg_wrapper += ('1M' +
-                                struct.pack('!I', self._conn_sequence) +
-                                mesg)
-                self._conn_sequence += 1
-            return msg_wrapper
+        package = self._wrap_for_send(
+            [package], data_type=data_type)
 
-        metrics_package = wrap_for_send([packed_metric])
         LOG.debug(
             "Sending wrapped messages: [{}]".format(
-                metrics_package.encode(
+                package.encode(
                     'string_escape',
                     errors='backslashreplace'
                 )
             )
         )
 
-        self.socket.sendall(metrics_package)
+        self.socket.sendall(package)
 
         resp = ''
         while _has_readable(self.socket):
@@ -182,13 +159,35 @@ class Logmet(object):
         else:
             LOG.debug('ACK-success found')
 
+    def _wrap_for_send(self, messages, data_type):
+        msg_wrapper = '1W' + pack_int(len(messages))
+        for mesg in messages:
+            msg_wrapper += ('1' + data_type +
+                            pack_int(self._conn_sequence) +
+                            mesg)
+            self._conn_sequence += 1
+        return msg_wrapper
+
+    def emit_metric(self, name, value, timestamp=None):
+
+        if timestamp is None:
+            timestamp = time.time()
+
+        metric_fmt = '{0}.{1} {2} {3}\r\n'
+        metric_msg = metric_fmt.format(
+            self.space_id, name, value, timestamp)
+
+        encoded = to_bytes(metric_msg)
+        packed_metric = pack_int(len(encoded)) + encoded
+
+        self._send_data(packed_metric, data_type='M')
+
         LOG.debug('Metrics sent to logmet successfully')
 
     def emit_log(self, message):
         """
         :param message: string or dict to send to logmet
         """
-        self._assert_conn()
 
         if isinstance(message, str):
             entry = {'message': message}
@@ -198,88 +197,10 @@ class Logmet(object):
         # The tenant ID must be included for the message to be accepted
         entry['ALCH_TENANT_ID'] = self.space_id
 
-        encoded = self._pack_dict(entry)
+        encoded = pack_dict(entry)
+        encoded = to_bytes(encoded)
 
-        self._send_log(encoded)
-
-    def _pack_dict(self, msg):
-        """
-        :param msg: the dict to pack
-        :return: string in the format
-           '<num_keypars><len_key1><key1><len_val1><val1>...etc'
-        """
-        parts = []
-        total_keys = len(msg)
-        for key, value in msg.iteritems():
-            key = self._encode_unicode(key)
-            value = self._encode_unicode(value)
-            if not value:
-                # Keys without corresponding value can cause problems.
-                total_keys -= 1
-                continue
-            parts.extend([
-                self._pack_int(len(key)),
-                key,
-                self._pack_int(len(value)),
-                value,
-            ])
-
-        return self._pack_int(total_keys) + ''.join(parts)
-
-    def _encode_unicode(self, obj):
-        if isinstance(obj, unicode):
-            return obj.encode('utf-8', 'replace')
-        else:
-            return str(obj)
-
-    def _pack_int(self, i):
-        """
-        Pack an int into a 4 byte string big endian.
-        """
-        return struct.pack('!I', i)
-
-    def _send_log(self, message):
-        if isinstance(message, unicode):
-            # turn unicode into bytearray/str
-            encoded_message = message.encode('utf-8', 'replace')
-        else:
-            # cool, already encoded
-            encoded_message = str(message)
-
-        if self._conn_sequence is None:
-            self._conn_sequence = 1
-
-        # Currently only support sending one log entry at the time
-        message_package = ('1W' +
-                           self._pack_int(1) +
-                           '1D' + self._pack_int(self._conn_sequence) +
-                           encoded_message)
-        self._conn_sequence += 1
-
-        LOG.debug(
-            "Sending wrapped messages: [{}]".format(
-                message_package.encode(
-                    'string_escape',
-                    errors='backslashreplace'
-                )
-            )
-        )
-        acked = False
-        while not acked:
-            self.socket.sendall(message_package)
-
-            try:
-                resp = self.socket.recv(16)
-                LOG.debug('Ack buffer: [{}]'.format(resp))
-                if not resp.startswith('1A'):
-                    LOG.warning(
-                        'Unexpected ACK response from recv: [{}]'.format(resp)
-                    )
-                    time.sleep(0.1)
-                else:
-                    acked = True
-            except Exception:
-                LOG.warning('No ACK received from server!')
+        self._send_data(encoded, data_type='D')
 
         LOG.debug('Log message sent to logmet successfully')
 
@@ -311,6 +232,45 @@ class Logmet(object):
         self.socket.shutdown(1)
         time.sleep(0.1)
         self.socket.close()
+
+
+def pack_dict(msg):
+    """
+    :param msg: the dict to pack
+    :return: string in the format
+       '<num_keypars><len_key1><key1><len_val1><val1>...etc'
+    """
+    parts = []
+    total_keys = len(msg)
+    for key, value in msg.iteritems():
+        key = to_bytes(key)
+        value = to_bytes(value)
+        if not value:
+            # Keys without corresponding value can cause problems.
+            total_keys -= 1
+            continue
+        parts.extend([
+            pack_int(len(key)),
+            key,
+            pack_int(len(value)),
+            value,
+        ])
+
+    return pack_int(total_keys) + ''.join(parts)
+
+
+def pack_int(num):
+    return struct.pack('!I', num)
+
+
+def to_bytes(obj):
+    if isinstance(obj, unicode):
+        # turn unicode into bytearray/str
+        msg = obj.encode('utf-8', 'replace')
+    else:
+        # cool, already encoded
+        msg = str(obj)
+    return msg
 
 
 def _has_readable(sock):
