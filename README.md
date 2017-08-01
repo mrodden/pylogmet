@@ -49,4 +49,6 @@ lm.emit_log(
 # Where do I find my token?
 
 Find your logging token and space ID by running `python get_token.py` and
-following the prompts.
+following the prompts. If you log into Bluemix using an SSO, use `apikey`
+as your username and a [Bluemix API Key](https://console.bluemix.net/iam/#/apikeys)
+as the password, when prompted.
