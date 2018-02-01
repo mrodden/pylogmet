@@ -19,6 +19,14 @@ import ssl
 import struct
 import time
 
+
+try:
+    import certifi
+    HAS_CERTIFI = True
+except ImportError:
+    HAS_CERTIFI = False
+
+
 LOG = logging.getLogger(__name__)
 
 
@@ -80,16 +88,23 @@ class Logmet(object):
         self._connect()
 
     def _connect(self):
+        if HAS_CERTIFI:
+            cert_loc =  certifi.where()
+        else:
+            # default
+            cert_loc = None
+
         try:
-            ssl_context = ssl.create_default_context()
+            ssl_context = ssl.create_default_context(cafile=cert_loc)
             self.socket = ssl_context.wrap_socket(
                 socket.socket(socket.AF_INET),
                 server_hostname=self.logmet_host)
         except AttributeError:
-            # build our own then; probably not secure, but logmet
+            # build our own SSLContext then; probably not secure, but logmet
             # doesn't seem to check/verify certs?
             self.socket = ssl.wrap_socket(
-                socket.socket(socket.AF_INET))
+                socket.socket(socket.AF_INET),
+                ca_certs=cert_loc)
 
         self.socket.settimeout(self.default_timeout)
         self.socket.connect((self.logmet_host, int(self.logmet_port)))
