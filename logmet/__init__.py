@@ -15,6 +15,7 @@
 import logging
 import select
 import socket
+import sys
 import ssl
 import struct
 import time
@@ -25,6 +26,15 @@ try:
     HAS_CERTIFI = True
 except ImportError:
     HAS_CERTIFI = False
+
+# this is how python-six deals with some differences
+PY2 = sys.version_info[0] == 2
+PY3 = sys.version_info[0] == 3
+
+if PY3:
+    text_type = str
+else:
+    text_type = unicode
 
 
 LOG = logging.getLogger(__name__)
@@ -150,36 +160,31 @@ class Logmet(object):
             [package], data_type=data_type)
 
         LOG.debug(
-            "Sending wrapped messages: [{}]".format(
-                package.encode(
-                    'string_escape',
-                    errors='backslashreplace'
-                )
-            )
+            "Sending wrapped messages: [{}]".format(repr(package))
         )
 
         self.socket.sendall(package)
 
-        resp = ''
+        resp = b''
         while _has_readable(self.socket):
             data = self.socket.recv(1024)
             resp += data
-            if resp >= 6:
+            if len(resp) >= 6:
                 break
 
         LOG.debug('ACK buffer: [{}]'.format(repr(resp)))
-        if not resp.startswith('1A'):
+        if not resp.startswith(b'1A'):
             raise SendError(
                 'Invalid or no ACK from logmet: [{}]'.format(repr(resp)))
         else:
             LOG.debug('ACK-success found')
 
     def _wrap_for_send(self, messages, data_type):
-        msg_wrapper = '1W' + pack_int(len(messages))
+        msg_wrapper = b'1W' + pack_int(len(messages))
         for mesg in messages:
-            msg_wrapper += ('1' + data_type +
+            msg_wrapper += (b'1' + data_type +
                             pack_int(self._conn_sequence) +
-                            mesg)
+                            to_bytes(mesg))
             self._conn_sequence += 1
         return msg_wrapper
 
@@ -195,7 +200,7 @@ class Logmet(object):
         encoded = to_bytes(metric_msg)
         packed_metric = pack_int(len(encoded)) + encoded
 
-        self._send_data(packed_metric, data_type='M')
+        self._send_data(packed_metric, data_type=b'M')
 
         LOG.debug('Metrics sent to logmet successfully')
 
@@ -215,7 +220,7 @@ class Logmet(object):
         encoded = pack_dict(entry)
         encoded = to_bytes(encoded)
 
-        self._send_data(encoded, data_type='D')
+        self._send_data(encoded, data_type=b'D')
 
         LOG.debug('Log message sent to logmet successfully')
 
@@ -226,7 +231,7 @@ class Logmet(object):
         ident_fmt = '1I{0}{1}'
         ident_msg = ident_fmt.format(chr(len(ident)), ident)
 
-        self.socket.sendall(ident_msg)
+        self.socket.sendall(ident_msg.encode('utf-8'))
 
         auth_fmt = '2T{0}{1}{2}{3}'
         auth_msg = auth_fmt.format(
@@ -235,10 +240,10 @@ class Logmet(object):
                 chr(len(self._token)),
                 self._token)
 
-        self.socket.sendall(auth_msg)
+        self.socket.sendall(auth_msg.encode('utf-8'))
 
         resp = self.socket.recv(1024)
-        if not resp.startswith('1A'):
+        if not resp.startswith(b'1A'):
             raise Exception('Auth failure!')
         LOG.info('Auth to logmet successful')
 
@@ -257,7 +262,7 @@ def pack_dict(msg):
     """
     parts = []
     total_keys = len(msg)
-    for key, value in msg.iteritems():
+    for key, value in msg.items():
         key = to_bytes(key)
         value = to_bytes(value)
         if not value:
@@ -271,7 +276,7 @@ def pack_dict(msg):
             value,
         ])
 
-    return pack_int(total_keys) + ''.join(parts)
+    return pack_int(total_keys) + b''.join(parts)
 
 
 def pack_int(num):
@@ -279,12 +284,12 @@ def pack_int(num):
 
 
 def to_bytes(obj):
-    if isinstance(obj, unicode):
+    if isinstance(obj, text_type):
         # turn unicode into bytearray/str
         msg = obj.encode('utf-8', 'replace')
     else:
         # cool, already encoded
-        msg = str(obj)
+        msg = bytes(obj)
     return msg
 
 
