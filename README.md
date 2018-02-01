@@ -12,7 +12,7 @@ A Pythonic Logmet client
 import logmet
 
 lm = logmet.Logmet(
-    logmet_host='metrics.opvis.bluemix.net',
+    logmet_host='metrics.ng.bluemix.net',
     logmet_port=9095,
     space_id='deadbeef1234567890',
     token='put_your_logmet_logging_token_here'
@@ -28,7 +28,7 @@ lm.emit_metric(name='logmet.test.3', value=3)
 import logmet
 
 lm = logmet.Logmet(
-    logmet_host='logs.opvis.bluemix.net',
+    logmet_host='ingest.logging.ng.bluemix.net',
     logmet_port=9091,
     space_id='deadbeef1234567890',
     token='put_your_logmet_logging_token_here'

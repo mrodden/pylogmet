@@ -43,7 +43,7 @@ class Logmet(object):
         import logmet
 
         lm = logmet.Logmet(
-            logmet_host='metrics.opvis.bluemix.net',
+            logmet_host='metrics.ng.bluemix.net',
             logmet_port=9095,
             space_id='deadbbeef1234567890',
             token='put_your_logmet_logging_token_here'
@@ -58,7 +58,7 @@ class Logmet(object):
         import logmet
 
         lm = logmet.Logmet(
-            logmet_host='logs.opvis.bluemix.net',
+            logmet_host='ingest.logging.ng.bluemix.net',
             logmet_port=9091,
             space_id='deadbbeef1234567890',
             token='put_your_logmet_logging_token_here'
