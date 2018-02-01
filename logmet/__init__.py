@@ -99,7 +99,7 @@ class Logmet(object):
 
     def _connect(self):
         if HAS_CERTIFI:
-            cert_loc =  certifi.where()
+            cert_loc = certifi.where()
         else:
             # default
             cert_loc = None
